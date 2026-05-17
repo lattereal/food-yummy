@@ -246,10 +246,6 @@
       setTimeout(() => wrapper.classList.remove("playing"), 200);
     });
 
-    audioPlayer.addEventListener("ended", () => {
-      loadPack(getRandomPack(currentPack));
-    });
-
     document.getElementById("shuffle-btn").addEventListener("click", () => {
       loadPack(getRandomPack(currentPack));
     });
