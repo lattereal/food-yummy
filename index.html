@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Food</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      background: #000;
+      color: #fff;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-family: Arial, sans-serif;
+    }
+
+    h1 {
+      font-size: 1.4rem;
+      letter-spacing: 0.1em;
+      margin-bottom: 6px;
+      color: #aaa;
+      text-transform: uppercase;
+    }
+
+    #info-note {
+      font-size: 0.72rem;
+      color: #444;
+      margin-bottom: 26px;
+      letter-spacing: 0.04em;
+      text-align: center;
+      line-height: 1.7;
+    }
+
+    #info-note span {
+      color: #666;
+    }
+
+    #pack-name {
+      font-size: 1.1rem;
+      margin-bottom: 16px;
+      color: #fff;
+      letter-spacing: 0.05em;
+      min-height: 1.4em;
+      text-transform: capitalize;
+    }
+
+    #sound-badge {
+      font-size: 0.7rem;
+      color: #555;
+      margin-bottom: 12px;
+      letter-spacing: 0.06em;
+      min-height: 1em;
+    }
+
+    #image-wrapper {
+      position: relative;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    #food-image {
+      display: block;
+      max-width: 340px;
+      max-height: 340px;
+      width: auto;
+      height: auto;
+      border-radius: 12px;
+      border: 2px solid #222;
+      transition: transform 0.1s ease, border-color 0.2s ease;
+    }
+
+    #image-wrapper:hover #food-image {
+      border-color: #555;
+      transform: scale(1.02);
+    }
+
+    #image-wrapper.playing #food-image {
+      border-color: #fff;
+      transform: scale(0.97);
+    }
+
+    #click-hint {
+      margin-top: 18px;
+      font-size: 0.8rem;
+      color: #444;
+      letter-spacing: 0.08em;
+    }
+
+    #shuffle-btn {
+      margin-top: 20px;
+      background: transparent;
+      border: 1px solid #333;
+      color: #888;
+      padding: 8px 24px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      letter-spacing: 0.05em;
+      transition: border-color 0.2s, color 0.2s;
+    }
+
+    #shuffle-btn:hover {
+      border-color: #777;
+      color: #fff;
+    }
+
+    #missing-msg {
+      margin-top: 20px;
+      font-size: 0.78rem;
+      color: #555;
+      text-align: center;
+      max-width: 340px;
+      line-height: 1.6;
+      white-space: pre-line;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Yum</h1>
+  <p id="info-note">
+    <span>some items have multiple sounds, each click picks one at random</span><br>
+    some items may have no sound at all, so you might hear nothing<br>
+    refresh the page to get a different item
+  </p>
+
+  <div id="pack-name"></div>
+  <div id="sound-badge"></div>
+
+  <div id="image-wrapper">
+    <img id="food-image" src="" alt="food" />
+  </div>
+
+  <p id="click-hint">click the image to play</p>
+  <button id="shuffle-btn">shuffle</button>
+  <p id="missing-msg"></p>
+
+  <audio id="audio-player"></audio>
+
+  <script>
+    const PACKS = [
+      { folder: "chezburger",     label: "Chezburger" },
+      { folder: "bloxycola",      label: "Bloxycola" },
+      { folder: "space-sandwich", label: "Space Sandwich" },
+      { folder: "taco",           label: "Taco" },
+      { folder: "cake",           label: "Cake" },
+      { folder: "pixel-pizza",    label: "Pixel Pizza" },
+      { folder: "watermelon",     label: "Watermelon" },
+      { folder: "turkyleg",       label: "Turky Leg" },
+      { folder: "hotdog",         label: "Hotdog" },
+      { folder: "bloxiade",       label: "Bloxiade" },
+      { folder: "chocymilk",      label: "Chocymilk" },
+    ];
+
+    const IMAGE_EXTS = ["png", "jpg", "jpeg", "gif", "webp", "avif", "bmp", "svg", "tiff", "tif"];
+    const AUDIO_EXTS = ["mp3", "ogg", "wav", "mp4", "m4a", "aac", "flac", "opus", "weba"];
+    const MAX_SOUNDS  = 10;
+
+    let currentPack       = null;
+    let currentAudioUrls  = [];
+
+    const audioPlayer = document.getElementById("audio-player");
+    const foodImage   = document.getElementById("food-image");
+    const packName    = document.getElementById("pack-name");
+    const soundBadge  = document.getElementById("sound-badge");
+    const wrapper     = document.getElementById("image-wrapper");
+    const missingMsg  = document.getElementById("missing-msg");
+
+    function probeFile(base, exts) {
+      return new Promise((resolve) => {
+        let i = 0;
+        function tryNext() {
+          if (i >= exts.length) { resolve(null); return; }
+          const url = base + "." + exts[i++];
+          fetch(url, { method: "HEAD" })
+            .then(r => r.ok ? resolve(url) : tryNext())
+            .catch(() => tryNext());
+        }
+        tryNext();
+      });
+    }
+
+    async function findPackFiles(pack) {
+      const base = `packs/${pack.folder}/`;
+
+      let imgUrl = await probeFile(base + "image", IMAGE_EXTS);
+      if (!imgUrl) imgUrl = await probeFile(base + pack.folder, IMAGE_EXTS);
+
+      const audioUrls = [];
+
+      const plain = await probeFile(base + "audio", AUDIO_EXTS);
+      if (plain) audioUrls.push(plain);
+
+      const numbered = await Promise.all(
+        Array.from({ length: MAX_SOUNDS }, (_, i) =>
+          probeFile(base + "audio" + (i + 1), AUDIO_EXTS)
+        )
+      );
+      numbered.forEach(u => u && audioUrls.push(u));
+
+      return { imgUrl, audioUrls };
+    }
+
+    function pickRandom(arr) {
+      return arr[Math.floor(Math.random() * arr.length)];
+    }
+
+    async function loadPack(pack) {
+      packName.textContent  = pack.label;
+      soundBadge.textContent = "";
+      foodImage.src         = "";
+      missingMsg.textContent = "";
+      currentPack           = pack;
+      currentAudioUrls      = [];
+
+      const { imgUrl, audioUrls } = await findPackFiles(pack);
+
+      if (imgUrl) {
+        foodImage.src          = imgUrl;
+        foodImage.style.display = "block";
+      } else {
+        foodImage.style.display = "none";
+      }
+
+      if (audioUrls.length > 0) {
+        currentAudioUrls = audioUrls;
+        if (audioUrls.length > 1) {
+          soundBadge.textContent = audioUrls.length + " sounds";
+        }
+      }
+
+      if (!imgUrl && audioUrls.length === 0) {
+        missingMsg.textContent =
+          `Pack "${pack.label}" is empty.\n` +
+          `Add image.png and audio.mp3 to packs/${pack.folder}/`;
+      } else if (!imgUrl) {
+        missingMsg.textContent =
+          `No image found in packs/${pack.folder}/\n` +
+          `Name your image: image.png (or .jpg .gif .webp)`;
+      } else if (audioUrls.length === 0) {
+        missingMsg.textContent =
+          `No audio found in packs/${pack.folder}/\n` +
+          `Name your audio: audio.mp3  (or audio1.mp3, audio2.mp3 for multiple)`;
+      }
+    }
+
+    function getRandomPack(exclude) {
+      const pool = exclude ? PACKS.filter(p => p !== exclude) : PACKS;
+      return pool[Math.floor(Math.random() * pool.length)];
+    }
+
+    wrapper.addEventListener("click", () => {
+      if (currentAudioUrls.length === 0) return;
+
+      const chosen = pickRandom(currentAudioUrls);
+      audioPlayer.src          = chosen;
+      audioPlayer.currentTime  = 0;
+      audioPlayer.play();
+
+      wrapper.classList.add("playing");
+      setTimeout(() => wrapper.classList.remove("playing"), 200);
+    });
+
+    audioPlayer.addEventListener("ended", () => {
+      loadPack(getRandomPack(currentPack));
+    });
+
+    document.getElementById("shuffle-btn").addEventListener("click", () => {
+      loadPack(getRandomPack(currentPack));
+    });
+
+    loadPack(getRandomPack());
+  </script>
+</body>
+</html>
