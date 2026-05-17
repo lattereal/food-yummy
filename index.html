@@ -160,12 +160,8 @@
       { folder: "chocymilk",      label: "Chocymilk" },
     ];
 
-    const IMAGE_EXTS = ["png", "jpg", "jpeg", "gif", "webp", "avif", "bmp", "svg", "tiff", "tif"];
-    const AUDIO_EXTS = ["mp3", "ogg", "wav", "mp4", "m4a", "aac", "flac", "opus", "weba"];
-    const MAX_SOUNDS  = 10;
-
-    let currentPack       = null;
-    let currentAudioUrls  = [];
+    let currentPack      = null;
+    let currentAudioUrls = [];
 
     const audioPlayer = document.getElementById("audio-player");
     const foodImage   = document.getElementById("food-image");
@@ -174,39 +170,20 @@
     const wrapper     = document.getElementById("image-wrapper");
     const missingMsg  = document.getElementById("missing-msg");
 
-    function probeFile(base, exts) {
-      return new Promise((resolve) => {
-        let i = 0;
-        function tryNext() {
-          if (i >= exts.length) { resolve(null); return; }
-          const url = base + "." + exts[i++];
-          fetch(url, { method: "HEAD" })
-            .then(r => r.ok ? resolve(url) : tryNext())
-            .catch(() => tryNext());
-        }
-        tryNext();
-      });
-    }
-
     async function findPackFiles(pack) {
       const base = `packs/${pack.folder}/`;
-
-      let imgUrl = await probeFile(base + "image", IMAGE_EXTS);
-      if (!imgUrl) imgUrl = await probeFile(base + pack.folder, IMAGE_EXTS);
-
-      const audioUrls = [];
-
-      const plain = await probeFile(base + "audio", AUDIO_EXTS);
-      if (plain) audioUrls.push(plain);
-
-      const numbered = await Promise.all(
-        Array.from({ length: MAX_SOUNDS }, (_, i) =>
-          probeFile(base + "audio" + (i + 1), AUDIO_EXTS)
-        )
-      );
-      numbered.forEach(u => u && audioUrls.push(u));
-
-      return { imgUrl, audioUrls };
+      try {
+        const res = await fetch(base + "manifest.json");
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        const imgUrl    = data.image ? base + data.image : null;
+        const audioUrls = Array.isArray(data.audio)
+          ? data.audio.map(f => base + f)
+          : (data.audio ? [base + data.audio] : []);
+        return { imgUrl, audioUrls };
+      } catch {
+        return { imgUrl: null, audioUrls: [] };
+      }
     }
 
     function pickRandom(arr) {
